@@ -1,6 +1,8 @@
 use crate::lexer::{Token, UnaryOp};
-use std::slice::Iter;
 use smallvec::{smallvec, SmallVec};
+use std::slice::Iter;
+
+const SVEC_SIZE: usize = 5;
 
 #[derive(Debug)]
 enum Expression {
@@ -20,13 +22,9 @@ enum Syntax<'a> {
     UnaryOp(UnaryOp),
 }
 
-struct ASTNode<'a> {
-    value: Syntax<'a>,
-    children: SmallVec::<[usize; 5]>,
-}
-
 pub struct AST<'a> {
-    nodes: Vec<ASTNode<'a>>,
+    nodes: Vec<Syntax<'a>>,
+    children: Vec<SmallVec<[usize; SVEC_SIZE]>>,
     root_node: usize,
 }
 
@@ -34,10 +32,12 @@ impl<'a> AST<'a> {
     pub fn new(tokens: &[Token<'a>]) -> Result<Self, String> {
         let mut ast = AST {
             nodes: Vec::new(),
+            children: Vec::new(),
             root_node: 0,
         };
 
         ast.nodes.reserve(tokens.len());
+        ast.children.reserve(tokens.len());
 
         let mut token_iter = tokens.iter();
         let root = parse_function(&mut token_iter, &mut ast)?;
@@ -56,11 +56,12 @@ impl<'a> AST<'a> {
                 indent = format!("  {}", indent);
             }
 
-            let node = &ast.nodes[node];
+            let value = &ast.nodes[node];
+            let children = &ast.children[node];
 
-            println!("{}{:?}", indent, node.value);
+            println!("{}{:?}", indent, value);
 
-            for child in node.children.iter() {
+            for child in children.iter() {
                 recurse(ast, *child, recursion_level + 1);
             }
         }
@@ -73,16 +74,17 @@ impl<'a> AST<'a> {
         let curr_node = self.root_node;
 
         fn recurse(ast: &AST, node: usize, out: &mut Vec<String>) {
-            let node = &ast.nodes[node];
-            match &node.value{
+            let value = &ast.nodes[node];
+            let children = &ast.children[node];
+            match value {
                 Syntax::Function(s) => {
                     out.push(format!(".globl {}\n{}:\n", s, s));
-                    for child in node.children.iter() {
+                    for child in children.iter() {
                         recurse(ast, *child, out);
                     }
                 }
                 Syntax::Statement(st) => {
-                    for child in node.children.iter() {
+                    for child in children.iter() {
                         recurse(ast, *child, out);
                     }
 
@@ -98,7 +100,7 @@ impl<'a> AST<'a> {
                     }
                 },
                 Syntax::UnaryOp(op) => {
-                    for child in node.children.iter() {
+                    for child in children.iter() {
                         recurse(ast, *child, out);
                     }
 
@@ -121,8 +123,16 @@ impl<'a> AST<'a> {
         out.join("")
     }
 
-    fn insert(&mut self, node: ASTNode<'a>) -> usize {
-        self.nodes.push(node);
+    fn insert(
+        &mut self,
+        value: Syntax<'a>,
+        children: Option<SmallVec<[usize; SVEC_SIZE]>>,
+    ) -> usize {
+        self.nodes.push(value);
+        match children {
+            Some(c) => self.children.push(c),
+            None => self.children.push(SmallVec::<[usize; SVEC_SIZE]>::new()),
+        }
         self.nodes.len() - 1
     }
 }
@@ -163,12 +173,7 @@ fn parse_function<'a>(tokens: &mut Iter<Token<'a>>, ast: &mut AST<'a>) -> Result
 
     let statement = parse_statement(tokens, ast)?;
 
-    let node = ASTNode {
-        value: Syntax::Function(func_name),
-        children: smallvec![statement],
-    };
-
-    let function = ast.insert(node);
+    let function = ast.insert(Syntax::Function(func_name), Some(smallvec![statement]));
 
     match tokens.next() {
         Some(Token::CloseBrace) => {}
@@ -193,12 +198,7 @@ fn parse_statement(tokens: &mut Iter<Token>, ast: &mut AST) -> Result<usize, Str
 
     let exp = parse_expression(tokens, ast)?;
 
-    let node = ASTNode {
-        value: Syntax::Statement(Statement::Return),
-        children: smallvec![exp],
-    };
-
-    let statement = ast.insert(node);
+    let statement = ast.insert(Syntax::Statement(Statement::Return), Some(smallvec![exp]));
 
     match tokens.next() {
         Some(Token::Semicolon) => {}
@@ -214,12 +214,7 @@ fn parse_expression(tokens: &mut Iter<Token>, ast: &mut AST) -> Result<usize, St
     match tokens.next() {
         Some(Token::IntLiteral(num)) => match num.parse::<isize>() {
             Ok(i) => {
-                let node = ASTNode {
-                    value: Syntax::Expression(Expression::Constant(i)),
-                    children: SmallVec::<[usize; 5]>::new(),
-                };
-
-                let index = ast.insert(node);
+                let index = ast.insert(Syntax::Expression(Expression::Constant(i)), None);
 
                 Ok(index)
             }
@@ -228,23 +223,16 @@ fn parse_expression(tokens: &mut Iter<Token>, ast: &mut AST) -> Result<usize, St
         Some(Token::UnaryOp(op)) => {
             let inner_expression = parse_expression(tokens, ast)?;
 
-            let node = ASTNode {
-                value: Syntax::UnaryOp(*op),
-                children: smallvec![inner_expression],
-            };
-
-            let index = ast.insert(node);
+            let index = ast.insert(Syntax::UnaryOp(*op), Some(smallvec![inner_expression]));
             Ok(index)
         }
         Some(Token::Minus) => {
             let inner_expression = parse_expression(tokens, ast)?;
 
-            let node = ASTNode {
-                value: Syntax::UnaryOp(UnaryOp::Minus),
-                children: smallvec![inner_expression],
-            };
-
-            let index = ast.insert(node);
+            let index = ast.insert(
+                Syntax::UnaryOp(UnaryOp::Minus),
+                Some(smallvec![inner_expression]),
+            );
             Ok(index)
         }
         Some(t) => Err(format!("Unexpected token: {}", t)),
