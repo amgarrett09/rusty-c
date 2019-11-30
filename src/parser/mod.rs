@@ -288,7 +288,7 @@ fn parse_factor(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, Str
             }
             Err(why) => return Err(why.to_string()),
         },
-        _ => {}
+        Some(t) => Err(format!("Unexpected token: {}", t)),
+        None => Err("Unexpected end of file".to_string())
     }
-    Ok(1)
 }
