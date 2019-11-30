@@ -111,8 +111,32 @@ impl<'a> AST<'a> {
                         }
                     }
                 }
-                // TODO: Add codegen for binary operators
-                _ => {}
+                Syntax::BinaryOp(op) => match op {
+                    BinaryOp::Add => {
+                        recurse(ast, children[0], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push("pop  %rcx\naddl  %ecx, %eax\n".to_string());
+                    }
+                    BinaryOp::Mult => {
+                        recurse(ast, children[0], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push("pop  %rcx\nimul  %ecx, %eax\n".to_string());
+                    }
+                    BinaryOp::Minus => {
+                        recurse(ast, children[1], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[0], out);
+                        out.push("pop  %rcx\nsubl  %ecx, %eax\n".to_string());
+                    }
+                    BinaryOp::Div => {
+                        recurse(ast, children[1], out);
+                        out.push("movl  %eax, %ecx\n".to_string());
+                        recurse(ast, children[0], out);
+                        out.push("cdq\nidivl  %ecx\n".to_string());
+                    }
+                },
             }
         }
 
@@ -265,30 +289,30 @@ fn parse_factor(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, Str
         Some(Token::OpenParens) => {
             let exp = parse_expression(tokens, ast)?;
             match tokens.next() {
-                Some(Token::CloseParens) => return Ok(exp),
-                _ => return Err("Expected closing parens after expression".to_string()),
+                Some(Token::CloseParens) => Ok(exp),
+                _ => Err("Expected closing parens after expression".to_string()),
             }
         }
         Some(Token::UnaryOp(op)) => {
             let factor = parse_factor(tokens, ast)?;
             let op = ast.insert(Syntax::UnaryOp(*op), Some(smallvec![factor]));
 
-            return Ok(op);
+            Ok(op)
         }
         Some(Token::Minus) => {
             let factor = parse_factor(tokens, ast)?;
             let op = ast.insert(Syntax::UnaryOp(UnaryOp::Minus), Some(smallvec![factor]));
 
-            return Ok(op);
+            Ok(op)
         }
         Some(Token::IntLiteral(num)) => match num.parse::<isize>() {
             Ok(i) => {
                 let index = ast.insert(Syntax::Constant(i), None);
-                return Ok(index);
+                Ok(index)
             }
-            Err(why) => return Err(why.to_string()),
+            Err(why) => Err(why.to_string()),
         },
         Some(t) => Err(format!("Unexpected token: {}", t)),
-        None => Err("Unexpected end of file".to_string())
+        None => Err("Unexpected end of file".to_string()),
     }
 }
