@@ -1,13 +1,9 @@
-use crate::lexer::{Token, UnaryOp};
+use crate::lexer::{BinaryOp, Token, UnaryOp};
 use smallvec::{smallvec, SmallVec};
+use std::iter::Peekable;
 use std::slice::Iter;
 
 const SVEC_SIZE: usize = 5;
-
-#[derive(Debug)]
-enum Expression {
-    Constant(isize),
-}
 
 #[derive(Debug)]
 enum Statement {
@@ -18,8 +14,9 @@ enum Statement {
 enum Syntax<'a> {
     Function(&'a str),
     Statement(Statement),
-    Expression(Expression),
     UnaryOp(UnaryOp),
+    BinaryOp(BinaryOp),
+    Constant(isize),
 }
 
 pub struct AST<'a> {
@@ -28,8 +25,10 @@ pub struct AST<'a> {
     root_node: usize,
 }
 
+type PeekableTokens<'a> = Peekable<Iter<'a, Token<'a>>>;
+
 impl<'a> AST<'a> {
-    pub fn new(tokens: &[Token<'a>]) -> Result<Self, String> {
+    pub fn new(tokens: &'a [Token]) -> Result<Self, String> {
         let mut ast = AST {
             nodes: Vec::new(),
             children: Vec::new(),
@@ -39,7 +38,7 @@ impl<'a> AST<'a> {
         ast.nodes.reserve(tokens.len());
         ast.children.reserve(tokens.len());
 
-        let mut token_iter = tokens.iter();
+        let mut token_iter = tokens.iter().peekable();
         let root = parse_function(&mut token_iter, &mut ast)?;
         ast.root_node = root;
 
@@ -94,11 +93,9 @@ impl<'a> AST<'a> {
                         }
                     }
                 }
-                Syntax::Expression(exp) => match exp {
-                    Expression::Constant(i) => {
-                        out.push(format!("movl  ${}, %eax\n", i));
-                    }
-                },
+                Syntax::Constant(i) => {
+                    out.push(format!("movl  ${}, %eax\n", i));
+                }
                 Syntax::UnaryOp(op) => {
                     for child in children.iter() {
                         recurse(ast, *child, out);
@@ -114,6 +111,8 @@ impl<'a> AST<'a> {
                         }
                     }
                 }
+                // TODO: Add codegen for binary operators
+                _ => {}
             }
         }
 
@@ -138,7 +137,7 @@ impl<'a> AST<'a> {
 }
 
 // <function> ::= "int" <id> "(" ")" "{" <statement> "}"
-fn parse_function<'a>(tokens: &mut Iter<Token<'a>>, ast: &mut AST<'a>) -> Result<usize, String> {
+fn parse_function<'a>(tokens: &mut PeekableTokens<'a>, ast: &mut AST<'a>) -> Result<usize, String> {
     match tokens.next() {
         Some(Token::Keyword(s)) => {
             if s != &"int" {
@@ -185,7 +184,7 @@ fn parse_function<'a>(tokens: &mut Iter<Token<'a>>, ast: &mut AST<'a>) -> Result
 }
 
 // <statement> ::= "return" <exp> ";"
-fn parse_statement(tokens: &mut Iter<Token>, ast: &mut AST) -> Result<usize, String> {
+fn parse_statement(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
     match tokens.next() {
         Some(Token::Keyword(s)) => {
             if s != &"return" {
@@ -209,33 +208,87 @@ fn parse_statement(tokens: &mut Iter<Token>, ast: &mut AST) -> Result<usize, Str
     Ok(statement)
 }
 
-// <exp> ::= <unary_op> <exp> | <int>
-fn parse_expression(tokens: &mut Iter<Token>, ast: &mut AST) -> Result<usize, String> {
-    match tokens.next() {
-        Some(Token::IntLiteral(num)) => match num.parse::<isize>() {
-            Ok(i) => {
-                let index = ast.insert(Syntax::Expression(Expression::Constant(i)), None);
+// <exp> ::= <term> { ("+" | "-") <term> }
+fn parse_expression(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut term = parse_term(tokens, ast)?;
 
-                Ok(index)
+    loop {
+        match tokens.peek() {
+            Some(Token::BinaryOp(BinaryOp::Add)) => {
+                tokens.next().expect("Unexpected end of file");
+
+                let next_term = parse_term(tokens, ast)?;
+                term = ast.insert(
+                    Syntax::BinaryOp(BinaryOp::Add),
+                    Some(smallvec![term, next_term]),
+                );
             }
-            Err(why) => Err(why.to_string()),
-        },
-        Some(Token::UnaryOp(op)) => {
-            let inner_expression = parse_expression(tokens, ast)?;
+            Some(Token::Minus) => {
+                tokens.next().expect("Unexpected end of file");
 
-            let index = ast.insert(Syntax::UnaryOp(*op), Some(smallvec![inner_expression]));
-            Ok(index)
+                let next_term = parse_term(tokens, ast)?;
+                term = ast.insert(
+                    Syntax::BinaryOp(BinaryOp::Minus),
+                    Some(smallvec![term, next_term]),
+                );
+            }
+            _ => break,
+        }
+    }
+
+    Ok(term)
+}
+
+// <term> ::= <factor> { ("*" | "/") <factor> }
+fn parse_term(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut factor = parse_factor(tokens, ast)?;
+
+    loop {
+        match tokens.peek() {
+            Some(Token::BinaryOp(BinaryOp::Mult)) | Some(Token::BinaryOp(BinaryOp::Div)) => {
+                if let Some(Token::BinaryOp(op)) = tokens.next() {
+                    let next_factor = parse_factor(tokens, ast)?;
+                    factor =
+                        ast.insert(Syntax::BinaryOp(*op), Some(smallvec![factor, next_factor]));
+                }
+            }
+            _ => break,
+        }
+    }
+
+    Ok(factor)
+}
+
+// <factor> ::= "(" <exp> ")" | <unary_op> <factor> | <int>
+fn parse_factor(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    match tokens.next() {
+        Some(Token::OpenParens) => {
+            let exp = parse_expression(tokens, ast)?;
+            match tokens.next() {
+                Some(Token::CloseParens) => return Ok(exp),
+                _ => return Err("Expected closing parens after expression".to_string()),
+            }
+        }
+        Some(Token::UnaryOp(op)) => {
+            let factor = parse_factor(tokens, ast)?;
+            let op = ast.insert(Syntax::UnaryOp(*op), Some(smallvec![factor]));
+
+            return Ok(op);
         }
         Some(Token::Minus) => {
-            let inner_expression = parse_expression(tokens, ast)?;
+            let factor = parse_factor(tokens, ast)?;
+            let op = ast.insert(Syntax::UnaryOp(UnaryOp::Minus), Some(smallvec![factor]));
 
-            let index = ast.insert(
-                Syntax::UnaryOp(UnaryOp::Minus),
-                Some(smallvec![inner_expression]),
-            );
-            Ok(index)
+            return Ok(op);
         }
-        Some(t) => Err(format!("Unexpected token: {}", t)),
-        None => Err("Unexpected end of file".to_string()),
+        Some(Token::IntLiteral(num)) => match num.parse::<isize>() {
+            Ok(i) => {
+                let index = ast.insert(Syntax::Constant(i), None);
+                return Ok(index);
+            }
+            Err(why) => return Err(why.to_string()),
+        },
+        _ => {}
     }
+    Ok(1)
 }

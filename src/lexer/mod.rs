@@ -14,6 +14,7 @@ pub enum Token<'a> {
     IntLiteral(&'a str),
     Minus,
     UnaryOp(UnaryOp),
+    BinaryOp(BinaryOp),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -21,6 +22,14 @@ pub enum UnaryOp {
     Minus,
     BitComplement,
     Negation,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryOp {
+    Minus,
+    Add,
+    Mult,
+    Div,
 }
 
 impl<'a> fmt::Display for Token<'a> {
@@ -39,6 +48,12 @@ impl<'a> fmt::Display for Token<'a> {
                 UnaryOp::BitComplement => write!(f, "~"),
                 UnaryOp::Negation => write!(f, "!"),
                 UnaryOp::Minus => write!(f, "-"),
+            },
+            Token::BinaryOp(op) => match op {
+                BinaryOp::Minus => write!(f, "-"),
+                BinaryOp::Add => write!(f, "+"),
+                BinaryOp::Mult => write!(f, "*"),
+                BinaryOp::Div => write!(f, "/"),
             },
         }
     }
@@ -96,6 +111,24 @@ pub fn lex(input: &str) -> Vec<Token> {
             '!' => {
                 interpret_token(&input[start..end], &mut out);
                 out.push(Token::UnaryOp(UnaryOp::Negation));
+                start = i + 1;
+                end = i + 1;
+            }
+            '+' => {
+                interpret_token(&input[start..end], &mut out);
+                out.push(Token::BinaryOp(BinaryOp::Add));
+                start = i + 1;
+                end = i + 1;
+            }
+            '*' => {
+                interpret_token(&input[start..end], &mut out);
+                out.push(Token::BinaryOp(BinaryOp::Mult));
+                start = i + 1;
+                end = i + 1;
+            }
+            '/' => {
+                interpret_token(&input[start..end], &mut out);
+                out.push(Token::BinaryOp(BinaryOp::Div));
                 start = i + 1;
                 end = i + 1;
             }
