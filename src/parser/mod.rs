@@ -1,4 +1,4 @@
-use crate::lexer::{BinaryOp, Token, UnaryOp};
+use crate::lexer::{BinaryOp, Keyword, Token, UnaryOp};
 use smallvec::{smallvec, SmallVec};
 use std::iter::Peekable;
 use std::slice::Iter;
@@ -132,9 +132,9 @@ impl<'a> AST<'a> {
                     }
                     BinaryOp::Div => {
                         recurse(ast, children[1], out);
-                        out.push("movl  %eax, %ecx\n".to_string());
+                        out.push("movl  %eax, %r8d\n".to_string());
                         recurse(ast, children[0], out);
-                        out.push("cdq\nidivl  %ecx\n".to_string());
+                        out.push("cdq\nidivl  %r8d\n".to_string());
                     }
                 },
             }
@@ -163,11 +163,8 @@ impl<'a> AST<'a> {
 // <function> ::= "int" <id> "(" ")" "{" <statement> "}"
 fn parse_function<'a>(tokens: &mut PeekableTokens<'a>, ast: &mut AST<'a>) -> Result<usize, String> {
     match tokens.next() {
-        Some(Token::Keyword(s)) => {
-            if s != &"int" {
-                return Err(format!("Unexpected keyword: {}", s));
-            }
-        }
+        Some(Token::Keyword(Keyword::Int)) => {}
+        Some(Token::Keyword(_)) => return Err("Unexpected keyword".to_string()),
         Some(t) => return Err(format!("Expected function return type but got: {}", t)),
         None => return Err("Unexpected end of file".to_string()),
     }
@@ -210,12 +207,8 @@ fn parse_function<'a>(tokens: &mut PeekableTokens<'a>, ast: &mut AST<'a>) -> Res
 // <statement> ::= "return" <exp> ";"
 fn parse_statement(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
     match tokens.next() {
-        Some(Token::Keyword(s)) => {
-            if s != &"return" {
-                return Err(format!("Unknown keyword: {}", s));
-            }
-        }
-        Some(t) => return Err(format!("Expected keyword but got: {}", t)),
+        Some(Token::Keyword(Keyword::Return)) => {}
+        Some(t) => return Err(format!("Expected return keyword but got: {}", t)),
         None => return Err("Unexpected end of file".to_string()),
     }
 

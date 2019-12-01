@@ -1,10 +1,8 @@
 use std::fmt;
 
-const KEYWORDS: [&str; 2] = ["int", "return"];
-
 #[derive(Debug)]
 pub enum Token<'a> {
-    Keyword(&'a str),
+    Keyword(Keyword),
     Identifier(&'a str),
     OpenParens,
     CloseParens,
@@ -15,6 +13,12 @@ pub enum Token<'a> {
     Minus,
     UnaryOp(UnaryOp),
     BinaryOp(BinaryOp),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Keyword {
+    Int,
+    Return,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -35,7 +39,10 @@ pub enum BinaryOp {
 impl<'a> fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Token::Keyword(s) => write!(f, "{}", s),
+            Token::Keyword(k) => match k {
+                Keyword::Return => write!(f, "return"),
+                Keyword::Int => write!(f, "int"),
+            },
             Token::Identifier(s) => write!(f, "{}", s),
             Token::OpenParens => write!(f, "("),
             Token::CloseParens => write!(f, ")"),
@@ -149,15 +156,12 @@ pub fn lex(input: &str) -> Vec<Token> {
             return;
         }
 
-        match KEYWORDS.iter().position(|&x| x == token) {
-            Some(_) => out.push(Token::Keyword(token)),
-            None => match token.parse::<isize>() {
-                Ok(_) => {
-                    out.push(Token::IntLiteral(token));
-                }
-                Err(_) => {
-                    out.push(Token::Identifier(token));
-                }
+        match token {
+            "return" => out.push(Token::Keyword(Keyword::Return)),
+            "int" => out.push(Token::Keyword(Keyword::Int)),
+            _ => match token.parse::<isize>() {
+                Ok(_) => out.push(Token::IntLiteral(token)),
+                Err(_) => out.push(Token::Identifier(token)),
             },
         }
     }
