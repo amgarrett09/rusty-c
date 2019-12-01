@@ -116,25 +116,26 @@ impl<'a> AST<'a> {
                         recurse(ast, children[0], out);
                         out.push("push  %rax\n".to_string());
                         recurse(ast, children[1], out);
-                        out.push("pop  %rcx\naddl  %ecx, %eax\n".to_string());
+                        out.push("pop  %r10\naddl  %r10d, %eax\n".to_string());
                     }
                     BinaryOp::Mult => {
                         recurse(ast, children[0], out);
                         out.push("push  %rax\n".to_string());
                         recurse(ast, children[1], out);
-                        out.push("pop  %rcx\nimul  %ecx, %eax\n".to_string());
+                        out.push("pop  %r10\nimul  %r10d, %eax\n".to_string());
                     }
                     BinaryOp::Minus => {
                         recurse(ast, children[1], out);
                         out.push("push  %rax\n".to_string());
                         recurse(ast, children[0], out);
-                        out.push("pop  %rcx\nsubl  %ecx, %eax\n".to_string());
+                        out.push("pop  %r10\nsubl  %r10d, %eax\n".to_string());
                     }
                     BinaryOp::Div => {
-                        recurse(ast, children[1], out);
-                        out.push("movl  %eax, %r8d\n".to_string());
                         recurse(ast, children[0], out);
-                        out.push("cdq\nidivl  %r8d\n".to_string());
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push("movl  %eax, %r11d\npop  %rax\n".to_string());
+                        out.push("cdq\nidivl  %r11d\n".to_string());
                     }
                 },
             }
