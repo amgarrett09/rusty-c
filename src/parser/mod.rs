@@ -137,6 +137,7 @@ impl<'a> AST<'a> {
                         out.push("movl  %eax, %r11d\npop  %rax\n".to_string());
                         out.push("cdq\nidivl  %r11d\n".to_string());
                     }
+                    _ => {}
                 },
             }
         }
