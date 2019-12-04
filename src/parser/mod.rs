@@ -227,8 +227,86 @@ fn parse_statement(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, 
     Ok(statement)
 }
 
-// <exp> ::= <term> { ("+" | "-") <term> }
+// <exp> ::= <log-and-exp> { "||" <log-and-exp> }
 fn parse_expression(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut exp = parse_logical_and(tokens, ast)?;
+
+    loop {
+        match tokens.peek() {
+            Some(Token::BinaryOp(BinaryOp::LogOr)) => {
+                tokens.next().expect("Unexpected end of file");
+                let next_exp = parse_logical_and(tokens, ast)?;
+
+                exp = ast.insert(Syntax::BinaryOp(BinaryOp::LogOr), Some(smallvec![exp, next_exp]));
+            }
+            _ => break
+        }
+    }
+
+    Ok(exp)
+}
+
+// <log-and-exp> ::= <equality-exp> { "&&" <equality-exp> }
+fn parse_logical_and(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut exp = parse_equality_expression(tokens, ast)?;
+
+    loop {
+        match tokens.peek() {
+            Some(Token::BinaryOp(BinaryOp::LogAnd)) => {
+                tokens.next().expect("Unexpected end of file");
+                let next_exp = parse_equality_expression(tokens, ast)?;
+
+                exp = ast.insert(Syntax::BinaryOp(BinaryOp::LogAnd), Some(smallvec![exp, next_exp]));
+            }
+            _ => break
+        }
+    }
+
+    Ok(exp)
+}
+
+// <equality-exp> ::= <relational-exp> { "!=" | "==" <relational-exp> }
+fn parse_equality_expression(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut exp = parse_relational_expression(tokens, ast)?;
+
+    loop {
+        match tokens.peek() {
+            Some(Token::BinaryOp(BinaryOp::NotEqual)) | Some(Token::BinaryOp(BinaryOp::Equal)) => {
+                if let Some(Token::BinaryOp(op)) = tokens.next() {
+                    let next_exp = parse_relational_expression(tokens, ast)?;
+
+                    exp = ast.insert(Syntax::BinaryOp(*op), Some(smallvec![exp, next_exp]))
+                }
+            }
+            _ => break
+        }
+    }
+    Ok(exp)
+}
+
+// <relational-exp> ::= <add-exp> { "<" | ">" | "<=" | ">=" <add-exp> }
+fn parse_relational_expression(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut exp = parse_additive_expression(tokens, ast)?;
+
+    loop {
+        match tokens.peek() {
+            Some(Token::BinaryOp(BinaryOp::LessThan)) |
+            Some(Token::BinaryOp(BinaryOp::GreaterThan)) |
+            Some(Token::BinaryOp(BinaryOp::LessThanEqual)) |
+            Some(Token::BinaryOp(BinaryOp::GreaterThanEqual)) => {
+                if let Some(Token::BinaryOp(op)) = tokens.next() {
+                    let next_exp = parse_additive_expression(tokens, ast)?;
+                    exp = ast.insert(Syntax::BinaryOp(*op), Some(smallvec![exp, next_exp]));
+                }
+            }
+            _ => break
+        }
+    }
+    Ok(exp)
+}
+
+// <add-exp> ::= <term> { "+" | "-"  <term> }
+fn parse_additive_expression(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
     let mut term = parse_term(tokens, ast)?;
 
     loop {
