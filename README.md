@@ -3,7 +3,7 @@
 This is a very limited C compiler front-end, written in Rust.
 The goal for this is mainly to learn how compiler front-ends work by writing
 one myself. My approach is heavily inspired by 
-(https://norasandler.com/2017/11/29/Write-a-Compiler.html)[this series]
+[this series](https://norasandler.com/2017/11/29/Write-a-Compiler.html)
 by Nora Sandler.
 
 Ultimately, I'd like to get this to a point where it can handle a
