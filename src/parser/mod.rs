@@ -137,6 +137,80 @@ impl<'a> AST<'a> {
                         out.push("movl  %eax, %r11d\npop  %rax\n".to_string());
                         out.push("cdq\nidivl  %r11d\n".to_string());
                     }
+                    BinaryOp::Equal => {
+                        recurse(ast, children[0], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push(
+                            "pop  %r10\ncmpl  %eax, %r10d\nmovl  $0, %eax\nsete %al\n".to_string(),
+                        );
+                    }
+                    BinaryOp::NotEqual => {
+                        recurse(ast, children[0], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push(
+                            "pop  %r10\ncmpl  %eax, %r10d\nmovl  $0, %eax\nsetne %al\n".to_string(),
+                        );
+                    }
+                    BinaryOp::GreaterThan => {
+                        recurse(ast, children[0], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push(
+                            "pop  %r10\ncmpl  %eax, %r10d\nmovl  $0, %eax\nsetg %al\n".to_string(),
+                        );
+                    }
+                    BinaryOp::GreaterThanEqual => {
+                        recurse(ast, children[0], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push(
+                            "pop  %r10\ncmpl  %eax, %r10d\nmovl  $0, %eax\nsetge %al\n".to_string(),
+                        );
+                    }
+                    BinaryOp::LessThan => {
+                        recurse(ast, children[0], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push(
+                            "pop  %r10\ncmpl  %eax, %r10d\nmovl  $0, %eax\nsetl %al\n".to_string(),
+                        );
+                    }
+                    BinaryOp::LessThanEqual => {
+                        recurse(ast, children[0], out);
+                        out.push("push  %rax\n".to_string());
+                        recurse(ast, children[1], out);
+                        out.push(
+                            "pop  %r10\ncmpl  %eax, %r10d\nmovl  $0, %eax\nsetle %al\n".to_string(),
+                        );
+                    }
+                    BinaryOp::LogOr => {
+                        let clause_label = format!("_clause{}", node);
+                        let end_label = format!("_end{}", node);
+
+                        recurse(ast, children[0], out);
+                        out.push(format!("cmpl  $0, %eax\nje  {}\n", clause_label));
+                        out.push(format!("movl  $1, %eax\njmp  {}\n", end_label));
+
+                        out.push(format!("{}:\n", clause_label));
+                        recurse(ast, children[1], out);
+                        out.push("cmpl  $0, %eax\nmovl  $0, %eax\nsetne  %al\n".to_string());
+                        out.push(format!("{}:\n", end_label));
+                    }
+                    BinaryOp::LogAnd => {
+                        let clause_label = format!("_clause{}", node);
+                        let end_label = format!("_end{}", node);
+
+                        recurse(ast, children[0], out);
+                        out.push(format!("cmpl  $0, %eax\njne {}\n", clause_label));
+                        out.push(format!("jmp  {}\n", end_label));
+
+                        out.push(format!("{}:\n", clause_label));
+                        recurse(ast, children[1], out);
+                        out.push("cmpl  $0, %eax\nmovl $0, %eax\nsetne  %al\n".to_string());
+                        out.push(format!("{}:\n", end_label));
+                    }
                 },
             }
         }
@@ -226,8 +300,85 @@ fn parse_statement(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, 
     Ok(statement)
 }
 
-// <exp> ::= <term> { ("+" | "-") <term> }
+// <exp> ::= <log-and-exp> { "||" <log-and-exp> }
 fn parse_expression(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut exp = parse_logical_and(tokens, ast)?;
+
+    while let Some(Token::BinaryOp(BinaryOp::LogOr)) = tokens.peek() {
+        tokens.next().expect("Unexpected end of file");
+        let next_exp = parse_logical_and(tokens, ast)?;
+
+        exp = ast.insert(
+            Syntax::BinaryOp(BinaryOp::LogOr),
+            Some(smallvec![exp, next_exp]),
+        );
+    }
+
+    Ok(exp)
+}
+
+// <log-and-exp> ::= <equality-exp> { "&&" <equality-exp> }
+fn parse_logical_and(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut exp = parse_equality_expression(tokens, ast)?;
+
+    while let Some(Token::BinaryOp(BinaryOp::LogAnd)) = tokens.peek() {
+        tokens.next().expect("Unexpected end of file");
+        let next_exp = parse_equality_expression(tokens, ast)?;
+
+        exp = ast.insert(
+            Syntax::BinaryOp(BinaryOp::LogAnd),
+            Some(smallvec![exp, next_exp]),
+        );
+    }
+
+    Ok(exp)
+}
+
+// <equality-exp> ::= <relational-exp> { "!=" | "==" <relational-exp> }
+fn parse_equality_expression(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
+    let mut exp = parse_relational_expression(tokens, ast)?;
+
+    loop {
+        match tokens.peek() {
+            Some(Token::BinaryOp(BinaryOp::NotEqual)) | Some(Token::BinaryOp(BinaryOp::Equal)) => {
+                if let Some(Token::BinaryOp(op)) = tokens.next() {
+                    let next_exp = parse_relational_expression(tokens, ast)?;
+
+                    exp = ast.insert(Syntax::BinaryOp(*op), Some(smallvec![exp, next_exp]))
+                }
+            }
+            _ => break,
+        }
+    }
+    Ok(exp)
+}
+
+// <relational-exp> ::= <add-exp> { "<" | ">" | "<=" | ">=" <add-exp> }
+fn parse_relational_expression(
+    tokens: &mut PeekableTokens,
+    ast: &mut AST,
+) -> Result<usize, String> {
+    let mut exp = parse_additive_expression(tokens, ast)?;
+
+    loop {
+        match tokens.peek() {
+            Some(Token::BinaryOp(BinaryOp::LessThan))
+            | Some(Token::BinaryOp(BinaryOp::GreaterThan))
+            | Some(Token::BinaryOp(BinaryOp::LessThanEqual))
+            | Some(Token::BinaryOp(BinaryOp::GreaterThanEqual)) => {
+                if let Some(Token::BinaryOp(op)) = tokens.next() {
+                    let next_exp = parse_additive_expression(tokens, ast)?;
+                    exp = ast.insert(Syntax::BinaryOp(*op), Some(smallvec![exp, next_exp]));
+                }
+            }
+            _ => break,
+        }
+    }
+    Ok(exp)
+}
+
+// <add-exp> ::= <term> { "+" | "-"  <term> }
+fn parse_additive_expression(tokens: &mut PeekableTokens, ast: &mut AST) -> Result<usize, String> {
     let mut term = parse_term(tokens, ast)?;
 
     loop {

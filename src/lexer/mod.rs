@@ -34,6 +34,14 @@ pub enum BinaryOp {
     Add,
     Mult,
     Div,
+    LogAnd,
+    LogOr,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanEqual,
+    GreaterThan,
+    GreaterThanEqual,
 }
 
 impl<'a> fmt::Display for Token<'a> {
@@ -61,6 +69,14 @@ impl<'a> fmt::Display for Token<'a> {
                 BinaryOp::Add => write!(f, "+"),
                 BinaryOp::Mult => write!(f, "*"),
                 BinaryOp::Div => write!(f, "/"),
+                BinaryOp::LogAnd => write!(f, "&&"),
+                BinaryOp::LogOr => write!(f, "||"),
+                BinaryOp::Equal => write!(f, "=="),
+                BinaryOp::NotEqual => write!(f, "!="),
+                BinaryOp::LessThan => write!(f, "<"),
+                BinaryOp::LessThanEqual => write!(f, "<="),
+                BinaryOp::GreaterThan => write!(f, ">"),
+                BinaryOp::GreaterThanEqual => write!(f, ">="),
             },
         }
     }
@@ -71,7 +87,8 @@ pub fn lex(input: &str) -> Vec<Token> {
     let mut start = 0;
     let mut end = 0;
 
-    for (i, ch) in input.chars().enumerate() {
+    let mut characters = input.chars().enumerate().peekable();
+    while let Some((i, ch)) = characters.next() {
         match ch {
             '{' => {
                 interpret_token(&input[start..end], &mut out);
@@ -115,12 +132,22 @@ pub fn lex(input: &str) -> Vec<Token> {
                 start = i + 1;
                 end = i + 1;
             }
-            '!' => {
-                interpret_token(&input[start..end], &mut out);
-                out.push(Token::UnaryOp(UnaryOp::Negation));
-                start = i + 1;
-                end = i + 1;
-            }
+            '!' => match characters.peek() {
+                Some((_, '=')) => {
+                    if let Some((j, _)) = characters.next() {
+                        interpret_token(&input[start..end], &mut out);
+                        out.push(Token::BinaryOp(BinaryOp::NotEqual));
+                        start = j + 1;
+                        end = j + 1;
+                    }
+                }
+                _ => {
+                    interpret_token(&input[start..end], &mut out);
+                    out.push(Token::UnaryOp(UnaryOp::Negation));
+                    start = i + 1;
+                    end = i + 1;
+                }
+            },
             '+' => {
                 interpret_token(&input[start..end], &mut out);
                 out.push(Token::BinaryOp(BinaryOp::Add));
@@ -139,6 +166,68 @@ pub fn lex(input: &str) -> Vec<Token> {
                 start = i + 1;
                 end = i + 1;
             }
+            '&' => {
+                if let Some((_, '&')) = characters.peek() {
+                    if let Some((j, _)) = characters.next() {
+                        interpret_token(&input[start..end], &mut out);
+                        out.push(Token::BinaryOp(BinaryOp::LogAnd));
+                        start = j + 1;
+                        end = j + 1;
+                    }
+                }
+            }
+            '|' => {
+                if let Some((_, '|')) = characters.peek() {
+                    if let Some((j, _)) = characters.next() {
+                        interpret_token(&input[start..end], &mut out);
+                        out.push(Token::BinaryOp(BinaryOp::LogOr));
+                        start = j + 1;
+                        end = j + 1;
+                    }
+                }
+            }
+            '=' => {
+                if let Some((_, '=')) = characters.peek() {
+                    if let Some((j, _)) = characters.next() {
+                        interpret_token(&input[start..end], &mut out);
+                        out.push(Token::BinaryOp(BinaryOp::Equal));
+                        start = j + 1;
+                        end = j + 1;
+                    }
+                }
+            }
+            '<' => match characters.peek() {
+                Some((_, '=')) => {
+                    if let Some((j, _)) = characters.next() {
+                        interpret_token(&input[start..end], &mut out);
+                        out.push(Token::BinaryOp(BinaryOp::LessThanEqual));
+                        start = j + 1;
+                        end = j + 1;
+                    }
+                }
+                _ => {
+                    interpret_token(&input[start..end], &mut out);
+                    out.push(Token::BinaryOp(BinaryOp::LessThan));
+                    start = i + 1;
+                    end = i + 1;
+                }
+            },
+            '>' => match characters.peek() {
+                Some((_, '=')) => {
+                    if let Some((j, _)) = characters.next() {
+                        interpret_token(&input[start..end], &mut out);
+                        out.push(Token::BinaryOp(BinaryOp::GreaterThanEqual));
+                        start = j + 1;
+                        end = j + 1;
+                    }
+                }
+                _ => {
+                    interpret_token(&input[start..end], &mut out);
+                    out.push(Token::BinaryOp(BinaryOp::GreaterThan));
+                    start = i + 1;
+                    end = i + 1;
+                }
+            },
             _ => {
                 if ch.is_whitespace() {
                     interpret_token(&input[start..end], &mut out);
