@@ -185,7 +185,32 @@ impl<'a> AST<'a> {
                             "pop  %r10\ncmpl  %eax, %r10d\nmovl  $0, %eax\nsetle %al\n".to_string(),
                         );
                     }
-                    _ => {}
+                    BinaryOp::LogOr => {
+                        let clause_label = format!("_clause{}", node);
+                        let end_label = format!("_end{}", node);
+
+                        recurse(ast, children[0], out);
+                        out.push(format!("cmpl  $0, %eax\nje  {}\n", clause_label));
+                        out.push(format!("movl  $1, %eax\njmp  {}\n", end_label));
+
+                        out.push(format!("{}:\n", clause_label));
+                        recurse(ast, children[1], out);
+                        out.push("cmpl  $0, %eax\nmovl  $0, %eax\nsetne  %al\n".to_string());
+                        out.push(format!("{}:\n", end_label));
+                    }
+                    BinaryOp::LogAnd => {
+                        let clause_label = format!("_clause{}", node);
+                        let end_label = format!("_end{}", node);
+
+                        recurse(ast, children[0], out);
+                        out.push(format!("cmpl  $0, %eax\njne {}\n", clause_label));
+                        out.push(format!("jmp  {}\n", end_label));
+
+                        out.push(format!("{}:\n", clause_label));
+                        recurse(ast, children[1], out);
+                        out.push("cmpl  $0, %eax\nmovl $0, %eax\nsetne  %al\n".to_string());
+                        out.push(format!("{}:\n", end_label));
+                    }
                 },
             }
         }
