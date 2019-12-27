@@ -49,6 +49,8 @@ impl<'a> AST<'a> {
         let curr_node = self.root_node;
         let recursion_level = 0;
 
+        recurse(self, curr_node, recursion_level);
+
         fn recurse(ast: &AST, node: usize, recursion_level: usize) {
             let mut indent = String::from("");
             for _ in 0..recursion_level {
@@ -64,13 +66,16 @@ impl<'a> AST<'a> {
                 recurse(ast, *child, recursion_level + 1);
             }
         }
-
-        recurse(self, curr_node, recursion_level);
     }
 
     pub fn generate_assembly(&self) -> String {
         let mut out: Vec<String> = Vec::new();
         let curr_node = self.root_node;
+
+        recurse(self, curr_node, &mut out);
+
+        out.push("\n".to_string());
+        return out.join("");
 
         fn recurse(ast: &AST, node: usize, out: &mut Vec<String>) {
             let value = &ast.nodes[node];
@@ -211,14 +216,9 @@ impl<'a> AST<'a> {
                         out.push("cmpl  $0, %eax\nmovl $0, %eax\nsetne  %al\n".to_string());
                         out.push(format!("{}:\n", end_label));
                     }
-                },
+                }
             }
         }
-
-        recurse(self, curr_node, &mut out);
-
-        out.push("\n".to_string());
-        out.join("")
     }
 
     fn insert(
