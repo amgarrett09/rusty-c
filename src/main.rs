@@ -4,8 +4,12 @@ use std::io;
 use std::io::prelude::*;
 use std::path::Path;
 
+mod codegen;
+mod enums;
 mod lexer;
 mod parser;
+
+use codegen::assembly;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -33,7 +37,7 @@ fn main() -> io::Result<()> {
 
     ast.pretty_print();
 
-    let asm = ast.generate_assembly();
+    let asm = assembly::generate_assembly(&ast);
 
     let out_string = path_string
         .split('.')
